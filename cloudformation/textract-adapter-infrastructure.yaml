@@ -147,6 +147,16 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${LoggingBucketName}"
+              - !Sub "arn:aws:s3:::${LoggingBucketName}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
           - Sid: S3ServerAccessLogsPolicy
             Effect: Allow
             Principal:
@@ -161,16 +171,6 @@ Resources:
                   - !Sub "arn:aws:s3:::${LoggingBucketName}"
               StringEquals:
                 aws:SourceAccount: !Ref AWS::AccountId
-          - Sid: DenyInsecureTransport
-            Effect: Deny
-            Principal: "*"
-            Action: "s3:*"
-            Resource:
-              - !Sub "arn:aws:s3:::${LoggingBucketName}"
-              - !Sub "arn:aws:s3:::${LoggingBucketName}/*"
-            Condition:
-              Bool:
-                aws:SecureTransport: "false"
 
   DocumentBucket:
     Type: AWS::S3::Bucket
