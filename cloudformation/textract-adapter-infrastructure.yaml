@@ -10,6 +10,10 @@ Parameters:
     Type: String
     Description: Name of the S3 bucket for Textract output
     Default: amzn-s3-demo-destination-bucket
+  LoggingBucketName:
+    Type: String
+    Description: Name of the S3 bucket for access logging
+    Default: amzn-s3-demo-logging-bucket
 
 Resources:
   TextractProcessingRole:
@@ -28,37 +32,51 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: Allow
+              # Amazon Textract does not support resource-level permissions for
+              # AnalyzeDocument, StartDocumentAnalysis, or GetDocumentAnalysis.
+              # Resource must be "*". See:
+              # https://docs.aws.amazon.com/textract/latest/dg/security_iam_service-with-iam.html
+              - Sid: TextractAnalysis
+                Effect: Allow
                 Action:
                   - textract:AnalyzeDocument
                   - textract:StartDocumentAnalysis
                   - textract:GetDocumentAnalysis
                 Resource: "*"
-              - Effect: Allow
+              - Sid: ReadSourceDocuments
+                Effect: Allow
                 Action:
                   - s3:GetObject
                 Resource: !Sub "arn:aws:s3:::${SourceBucketName}/*"
-              - Effect: Allow
+              - Sid: WriteOutputResults
+                Effect: Allow
                 Action:
                   - s3:PutObject
                 Resource: !Sub "arn:aws:s3:::${OutputBucketName}/*"
-              - Effect: Allow
+              - Sid: ReadAdapterParameters
+                Effect: Allow
                 Action:
                   - ssm:GetParameter
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/textract/adapters/*"
-              - Effect: Allow
+              - Sid: DecryptSourceDocuments
+                Effect: Allow
                 Action:
                   - kms:Decrypt
-                Resource: !Ref SourceKMSKeyArn
-              - Effect: Allow
+                  - kms:DescribeKey
+                Resource: !GetAtt SourceKMSKey.Arn
+              - Sid: EncryptOutputResults
+                Effect: Allow
                 Action:
                   - kms:Encrypt
-                Resource: !Ref OutputKMSKeyArn
+                  - kms:GenerateDataKey
+                  - kms:DescribeKey
+                Resource: !GetAtt OutputKMSKey.Arn
 
-  SourceKMSKeyArn:
+  SourceKMSKey:
     Type: AWS::KMS::Key
     Properties:
       Description: KMS key for encrypting source documents
+      EnableKeyRotation: true
       KeyPolicy:
         Version: "2012-10-17"
         Statement:
@@ -77,10 +95,11 @@ Resources:
               - kms:DescribeKey
             Resource: "*"
 
-  OutputKMSKeyArn:
+  OutputKMSKey:
     Type: AWS::KMS::Key
     Properties:
       Description: KMS key for encrypting Textract output
+      EnableKeyRotation: true
       KeyPolicy:
         Version: "2012-10-17"
         Statement:
@@ -100,25 +119,113 @@ Resources:
               - kms:DescribeKey
             Resource: "*"
 
+  # S3 access logging bucket
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref LoggingBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  LoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: S3ServerAccessLogsPolicy
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "arn:aws:s3:::${LoggingBucketName}/*"
+            Condition:
+              ArnLike:
+                aws:SourceArn:
+                  - !Sub "arn:aws:s3:::${SourceBucketName}"
+                  - !Sub "arn:aws:s3:::${OutputBucketName}"
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
   DocumentBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref SourceBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: aws:kms
-              KMSMasterKeyID: !Ref SourceKMSKeyArn
+              KMSMasterKeyID: !Ref SourceKMSKey
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: source-bucket-logs/
+
+  DocumentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${SourceBucketName}"
+              - !Sub "arn:aws:s3:::${SourceBucketName}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
 
   OutputBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref OutputBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: aws:kms
-              KMSMasterKeyID: !Ref OutputKMSKeyArn
+              KMSMasterKeyID: !Ref OutputKMSKey
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: output-bucket-logs/
+
+  OutputBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref OutputBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${OutputBucketName}"
+              - !Sub "arn:aws:s3:::${OutputBucketName}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
 
 Outputs:
   ProcessingRoleArn:
