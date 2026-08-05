@@ -80,11 +80,28 @@ Resources:
       KeyPolicy:
         Version: "2012-10-17"
         Statement:
-          - Sid: EnableRootAccountAccess
+          # Root account access is required to administer this key (rotate,
+          # update policy, schedule deletion). Without this statement, the key
+          # becomes unmanageable if the creating principal is deleted.
+          - Sid: EnableKeyAdministration
             Effect: Allow
             Principal:
               AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-            Action: "kms:*"
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
             Resource: "*"
           - Sid: AllowTextractRoleDecrypt
             Effect: Allow
@@ -103,11 +120,28 @@ Resources:
       KeyPolicy:
         Version: "2012-10-17"
         Statement:
-          - Sid: EnableRootAccountAccess
+          # Root account access is required to administer this key (rotate,
+          # update policy, schedule deletion). Without this statement, the key
+          # becomes unmanageable if the creating principal is deleted.
+          - Sid: EnableKeyAdministration
             Effect: Allow
             Principal:
               AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-            Action: "kms:*"
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
             Resource: "*"
           - Sid: AllowTextractRoleEncrypt
             Effect: Allow
@@ -151,7 +185,9 @@ Resources:
             Effect: Deny
             Principal: "*"
             Action: "s3:*"
-            Resource: "*"
+            Resource:
+              - !GetAtt LoggingBucket.Arn
+              - !Sub "${LoggingBucket.Arn}/*"
             Condition:
               Bool:
                 aws:SecureTransport: "false"
@@ -201,7 +237,9 @@ Resources:
             Effect: Deny
             Principal: "*"
             Action: "s3:*"
-            Resource: "*"
+            Resource:
+              - !GetAtt DocumentBucket.Arn
+              - !Sub "${DocumentBucket.Arn}/*"
             Condition:
               Bool:
                 aws:SecureTransport: "false"
@@ -237,7 +275,9 @@ Resources:
             Effect: Deny
             Principal: "*"
             Action: "s3:*"
-            Resource: "*"
+            Resource:
+              - !GetAtt OutputBucket.Arn
+              - !Sub "${OutputBucket.Arn}/*"
             Condition:
               Bool:
                 aws:SecureTransport: "false"
