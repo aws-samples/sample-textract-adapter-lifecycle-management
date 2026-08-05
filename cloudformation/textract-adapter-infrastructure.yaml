@@ -151,9 +151,7 @@ Resources:
             Effect: Deny
             Principal: "*"
             Action: "s3:*"
-            Resource:
-              - !Sub "arn:aws:s3:::${LoggingBucketName}"
-              - !Sub "arn:aws:s3:::${LoggingBucketName}/*"
+            Resource: "*"
             Condition:
               Bool:
                 aws:SecureTransport: "false"
@@ -203,9 +201,7 @@ Resources:
             Effect: Deny
             Principal: "*"
             Action: "s3:*"
-            Resource:
-              - !Sub "arn:aws:s3:::${SourceBucketName}"
-              - !Sub "arn:aws:s3:::${SourceBucketName}/*"
+            Resource: "*"
             Condition:
               Bool:
                 aws:SecureTransport: "false"
@@ -241,9 +237,7 @@ Resources:
             Effect: Deny
             Principal: "*"
             Action: "s3:*"
-            Resource:
-              - !Sub "arn:aws:s3:::${OutputBucketName}"
-              - !Sub "arn:aws:s3:::${OutputBucketName}/*"
+            Resource: "*"
             Condition:
               Bool:
                 aws:SecureTransport: "false"
