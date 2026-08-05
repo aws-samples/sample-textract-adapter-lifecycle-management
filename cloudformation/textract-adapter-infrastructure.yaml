@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Supporting infrastructure for Amazon Textract adapter workloads
+
+Parameters:
+  SourceBucketName:
+    Type: String
+    Description: Name of the S3 bucket for input documents
+    Default: amzn-s3-demo-source-bucket
+  OutputBucketName:
+    Type: String
+    Description: Name of the S3 bucket for Textract output
+    Default: amzn-s3-demo-destination-bucket
+
+Resources:
+  TextractProcessingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: textract-adapter-processing-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TextractAdapterAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - textract:AnalyzeDocument
+                  - textract:StartDocumentAnalysis
+                  - textract:GetDocumentAnalysis
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${SourceBucketName}/*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${OutputBucketName}/*"
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/textract/adapters/*"
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: !Ref SourceKMSKeyArn
+              - Effect: Allow
+                Action:
+                  - kms:Encrypt
+                Resource: !Ref OutputKMSKeyArn
+
+  SourceKMSKeyArn:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for encrypting source documents
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableRootAccountAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          - Sid: AllowTextractRoleDecrypt
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt TextractProcessingRole.Arn
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+            Resource: "*"
+
+  OutputKMSKeyArn:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for encrypting Textract output
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableRootAccountAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          - Sid: AllowTextractRoleEncrypt
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt TextractProcessingRole.Arn
+            Action:
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - kms:DescribeKey
+            Resource: "*"
+
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref SourceBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref SourceKMSKeyArn
+
+  OutputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref OutputBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref OutputKMSKeyArn
+
+Outputs:
+  ProcessingRoleArn:
+    Description: ARN of the Textract processing IAM role
+    Value: !GetAtt TextractProcessingRole.Arn
+  SourceBucketArn:
+    Description: ARN of the source document bucket
+    Value: !GetAtt DocumentBucket.Arn
+  OutputBucketArn:
+    Description: ARN of the output bucket
+    Value: !GetAtt OutputBucket.Arn
