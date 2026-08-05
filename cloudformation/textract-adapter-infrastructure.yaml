@@ -129,10 +129,16 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      # Logging bucket logs to itself with a distinct prefix
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucketName
+        LogFilePrefix: self-logs/
 
   LoggingBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -152,8 +158,19 @@ Resources:
                 aws:SourceArn:
                   - !Sub "arn:aws:s3:::${SourceBucketName}"
                   - !Sub "arn:aws:s3:::${OutputBucketName}"
+                  - !Sub "arn:aws:s3:::${LoggingBucketName}"
               StringEquals:
                 aws:SourceAccount: !Ref AWS::AccountId
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:aws:s3:::${LoggingBucketName}"
+              - !Sub "arn:aws:s3:::${LoggingBucketName}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
 
   DocumentBucket:
     Type: AWS::S3::Bucket
@@ -164,6 +181,8 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -200,6 +219,8 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
