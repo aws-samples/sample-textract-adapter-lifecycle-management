@@ -1,25 +1,14 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Supporting infrastructure for Amazon Textract adapter workloads
-
-Parameters:
-  SourceBucketName:
-    Type: String
-    Description: Name of the S3 bucket for input documents
-    Default: amzn-s3-demo-source-bucket
-  OutputBucketName:
-    Type: String
-    Description: Name of the S3 bucket for Textract output
-    Default: amzn-s3-demo-destination-bucket
-  LoggingBucketName:
-    Type: String
-    Description: Name of the S3 bucket for access logging
-    Default: amzn-s3-demo-logging-bucket
+Description: >
+  Supporting infrastructure for Amazon Textract adapter workloads.
+  Provisions an IAM role, S3 buckets, and SSM parameter namespace
+  for the adapter lifecycle management pattern.
 
 Resources:
+  # --- IAM Role for Lambda-based Textract processing ---
   TextractProcessingRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: textract-adapter-processing-role
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -27,15 +16,19 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
         - PolicyName: TextractAdapterAccess
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # Amazon Textract does not support resource-level permissions for
-              # AnalyzeDocument, StartDocumentAnalysis, or GetDocumentAnalysis.
-              # Resource must be "*". See:
-              # https://docs.aws.amazon.com/textract/latest/dg/security_iam_service-with-iam.html
+              # Amazon Textract AnalyzeDocument, StartDocumentAnalysis, and
+              # GetDocumentAnalysis do not support resource-level permissions.
+              # These actions require Resource: "*" — this is an AWS service
+              # limitation, not a least-privilege gap. Least privilege is enforced
+              # by scoping S3 and SSM access to specific resources below.
+              # Reference: https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazontextract.html
               - Sid: TextractAnalysis
                 Effect: Allow
                 Action:
@@ -43,121 +36,28 @@ Resources:
                   - textract:StartDocumentAnalysis
                   - textract:GetDocumentAnalysis
                 Resource: "*"
-              - Sid: ReadSourceDocuments
+              - Sid: S3ReadSource
                 Effect: Allow
                 Action:
                   - s3:GetObject
-                Resource: !Sub "arn:aws:s3:::${SourceBucketName}/*"
-              - Sid: WriteOutputResults
+                Resource: !Sub "${DocumentBucket.Arn}/*"
+              - Sid: S3WriteOutput
                 Effect: Allow
                 Action:
                   - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::${OutputBucketName}/*"
-              - Sid: ReadAdapterParameters
+                Resource: !Sub "${OutputBucket.Arn}/*"
+              - Sid: SSMReadParameters
                 Effect: Allow
                 Action:
                   - ssm:GetParameter
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/textract/adapters/*"
-              - Sid: DecryptSourceDocuments
-                Effect: Allow
-                Action:
-                  - kms:Decrypt
-                  - kms:DescribeKey
-                Resource: !GetAtt SourceKMSKey.Arn
-              - Sid: EncryptOutputResults
-                Effect: Allow
-                Action:
-                  - kms:Encrypt
-                  - kms:GenerateDataKey
-                  - kms:DescribeKey
-                Resource: !GetAtt OutputKMSKey.Arn
 
-  SourceKMSKey:
-    Type: AWS::KMS::Key
-    Properties:
-      Description: KMS key for encrypting source documents
-      EnableKeyRotation: true
-      KeyPolicy:
-        Version: "2012-10-17"
-        Statement:
-          # Root account access is required to administer this key (rotate,
-          # update policy, schedule deletion). Without this statement, the key
-          # becomes unmanageable if the creating principal is deleted.
-          - Sid: EnableKeyAdministration
-            Effect: Allow
-            Principal:
-              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-            Action:
-              - kms:Create*
-              - kms:Describe*
-              - kms:Enable*
-              - kms:List*
-              - kms:Put*
-              - kms:Update*
-              - kms:Revoke*
-              - kms:Disable*
-              - kms:Get*
-              - kms:Delete*
-              - kms:TagResource
-              - kms:UntagResource
-              - kms:ScheduleKeyDeletion
-              - kms:CancelKeyDeletion
-            Resource: "*"
-          - Sid: AllowTextractRoleDecrypt
-            Effect: Allow
-            Principal:
-              AWS: !GetAtt TextractProcessingRole.Arn
-            Action:
-              - kms:Decrypt
-              - kms:DescribeKey
-            Resource: "*"
-
-  OutputKMSKey:
-    Type: AWS::KMS::Key
-    Properties:
-      Description: KMS key for encrypting Textract output
-      EnableKeyRotation: true
-      KeyPolicy:
-        Version: "2012-10-17"
-        Statement:
-          # Root account access is required to administer this key (rotate,
-          # update policy, schedule deletion). Without this statement, the key
-          # becomes unmanageable if the creating principal is deleted.
-          - Sid: EnableKeyAdministration
-            Effect: Allow
-            Principal:
-              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-            Action:
-              - kms:Create*
-              - kms:Describe*
-              - kms:Enable*
-              - kms:List*
-              - kms:Put*
-              - kms:Update*
-              - kms:Revoke*
-              - kms:Disable*
-              - kms:Get*
-              - kms:Delete*
-              - kms:TagResource
-              - kms:UntagResource
-              - kms:ScheduleKeyDeletion
-              - kms:CancelKeyDeletion
-            Resource: "*"
-          - Sid: AllowTextractRoleEncrypt
-            Effect: Allow
-            Principal:
-              AWS: !GetAtt TextractProcessingRole.Arn
-            Action:
-              - kms:Encrypt
-              - kms:GenerateDataKey
-              - kms:DescribeKey
-            Resource: "*"
-
-  # S3 access logging bucket
-  LoggingBucket:
+  # --- Source Document Bucket ---
+  # For production workloads, consider enabling AWS KMS server-side encryption.
+  # See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html
+  DocumentBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref LoggingBucketName
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -169,62 +69,6 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
-      # Logging bucket logs to itself with a distinct prefix
-      LoggingConfiguration:
-        DestinationBucketName: !Ref LoggingBucketName
-        LogFilePrefix: self-logs/
-
-  LoggingBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref LoggingBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: DenyInsecureTransport
-            Effect: Deny
-            Principal: "*"
-            Action: "s3:*"
-            Resource:
-              - !GetAtt LoggingBucket.Arn
-              - !Sub "${LoggingBucket.Arn}/*"
-            Condition:
-              Bool:
-                aws:SecureTransport: "false"
-          - Sid: S3ServerAccessLogsPolicy
-            Effect: Allow
-            Principal:
-              Service: logging.s3.amazonaws.com
-            Action: s3:PutObject
-            Resource: !Sub "arn:aws:s3:::${LoggingBucketName}/*"
-            Condition:
-              ArnLike:
-                aws:SourceArn:
-                  - !Sub "arn:aws:s3:::${SourceBucketName}"
-                  - !Sub "arn:aws:s3:::${OutputBucketName}"
-                  - !Sub "arn:aws:s3:::${LoggingBucketName}"
-              StringEquals:
-                aws:SourceAccount: !Ref AWS::AccountId
-
-  DocumentBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref SourceBucketName
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      VersioningConfiguration:
-        Status: Enabled
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: aws:kms
-              KMSMasterKeyID: !Ref SourceKMSKey
-      LoggingConfiguration:
-        DestinationBucketName: !Ref LoggingBucket
-        LogFilePrefix: source-bucket-logs/
 
   DocumentBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -244,10 +88,10 @@ Resources:
               Bool:
                 aws:SecureTransport: "false"
 
+  # --- Output Bucket ---
   OutputBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref OutputBucketName
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -258,11 +102,7 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: aws:kms
-              KMSMasterKeyID: !Ref OutputKMSKey
-      LoggingConfiguration:
-        DestinationBucketName: !Ref LoggingBucket
-        LogFilePrefix: output-bucket-logs/
+              SSEAlgorithm: AES256
 
   OutputBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -286,9 +126,11 @@ Outputs:
   ProcessingRoleArn:
     Description: ARN of the Textract processing IAM role
     Value: !GetAtt TextractProcessingRole.Arn
-  SourceBucketArn:
-    Description: ARN of the source document bucket
-    Value: !GetAtt DocumentBucket.Arn
-  OutputBucketArn:
-    Description: ARN of the output bucket
-    Value: !GetAtt OutputBucket.Arn
+
+  DocumentBucketName:
+    Description: Name of the source document bucket
+    Value: !Ref DocumentBucket
+
+  OutputBucketName:
+    Description: Name of the output bucket
+    Value: !Ref OutputBucket

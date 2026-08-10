@@ -56,7 +56,7 @@ def start_async_analysis(
             "Adapters": [
                 {
                     "AdapterId": adapter_id,
-                    "Version": adapter_version,
+                    "Version": str(adapter_version),
                     "Pages": ["*"],
                 }
             ]

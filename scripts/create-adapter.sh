@@ -33,7 +33,7 @@ echo "Creating adapter: $ADAPTER_NAME (feature type: $FEATURE_TYPE, environment:
 # Create the adapter
 RESPONSE=$(aws textract create-adapter \
   --adapter-name "$ADAPTER_NAME" \
-  --feature-types "$FEATURE_TYPE" \
+  --feature-types '["'"$FEATURE_TYPE"'"]' \
   --auto-update ENABLED \
   --tags "Environment=$ENVIRONMENT,FormType=$ADAPTER_NAME" \
   --output json)
