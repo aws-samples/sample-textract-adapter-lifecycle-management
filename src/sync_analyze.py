@@ -42,7 +42,7 @@ def analyze_document_sync(
             "Adapters": [
                 {
                     "AdapterId": adapter_id,
-                    "Version": adapter_version,
+                    "Version": str(adapter_version),
                     "Pages": ["*"],
                 }
             ]
