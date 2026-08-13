@@ -52,6 +52,29 @@ Resources:
                   - ssm:GetParameter
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/textract/adapters/*"
 
+  # --- Access Logging Bucket ---
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LoggingConfiguration:
+        LogFilePrefix: logging-bucket/
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldLogs
+            Status: Enabled
+            ExpirationInDays: 90
+
   # --- Source Document Bucket ---
   # For production workloads, consider enabling AWS KMS server-side encryption.
   # See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html
@@ -69,24 +92,9 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
-
-  DocumentBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref DocumentBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: DenyInsecureTransport
-            Effect: Deny
-            Principal: "*"
-            Action: "s3:*"
-            Resource:
-              - !GetAtt DocumentBucket.Arn
-              - !Sub "${DocumentBucket.Arn}/*"
-            Condition:
-              Bool:
-                aws:SecureTransport: "false"
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: document-bucket/
 
   # --- Output Bucket ---
   OutputBucket:
@@ -103,24 +111,55 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: output-bucket/
+
+  # --- Bucket Policies (SSL/TLS enforcement) ---
+  LoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: "*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  DocumentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: "*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
 
   OutputBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref OutputBucket
       PolicyDocument:
-        Version: "2012-10-17"
         Statement:
           - Sid: DenyInsecureTransport
             Effect: Deny
             Principal: "*"
             Action: "s3:*"
-            Resource:
-              - !GetAtt OutputBucket.Arn
-              - !Sub "${OutputBucket.Arn}/*"
+            Resource: "*"
             Condition:
               Bool:
-                aws:SecureTransport: "false"
+                aws:SecureTransport: false
 
 Outputs:
   ProcessingRoleArn:
