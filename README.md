@@ -119,12 +119,12 @@ terraform destroy
 ## Related Resources
 
 - [Amazon Textract Custom Queries Documentation](https://docs.aws.amazon.com/textract/latest/dg/adapters.html)
-- [AWS Blog: Automating Amazon Textract Adapter Lifecycle Management Across Accounts](#)
+- [AWS Blog: Automating Amazon Textract Adapter Lifecycle Management Across Accounts](https://aws.amazon.com/blogs/machine-learning/automating-amazon-textract-adapter-lifecycle-management-across-accounts/)
 
 ## Authors
 
 - **Bhavya Sruthi Sode** — Technical Account Manager, AWS
-- **Juan Pablo Arias Mora** — Senior Technical Account Manager, AWS
+- **Juan Pablo Arias Mora** — Customer Sentiment Intel Mgr, AWS
 
 ## License
 
